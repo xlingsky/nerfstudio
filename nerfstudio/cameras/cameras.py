@@ -290,6 +290,13 @@ class Cameras(TensorDataclass):
         w_jagged = not torch.all(self.width == self.width.view(-1)[0])
         return h_jagged or w_jagged
 
+    @property
+    def is_orthophoto(self) -> bool:
+        """
+        Returns whether or not the cameras are orthophotos (i.e. the camera type is ORTHOPHOTO)
+        """
+        return torch.all(self.camera_type == CameraType.ORTHOPHOTO.value)
+
     def get_image_coords(
         self, pixel_offset: float = 0.5, index: Optional[Tuple] = None
     ) -> Float[Tensor, "height width 2"]:

@@ -94,7 +94,7 @@ class ColmapDataParserConfig(DataParserConfig):
     """Path to masks directory. If not set, masks are not loaded."""
     depths_path: Optional[Path] = None
     """Path to depth maps directory. If not set, depths are not loaded."""
-    colmap_path: Path = Path("colmap/sparse/0")
+    colmap_path: Path = Path("sparse/0")
     """Path to the colmap reconstruction directory relative to the data path."""
     load_3D_points: bool = True
     """Whether to load the 3D points from the colmap reconstruction. This is helpful for Gaussian splatting and

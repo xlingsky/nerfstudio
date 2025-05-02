@@ -27,16 +27,55 @@
       "justMyCode": true
     },
     {
+      "name": "Python: train splatfacto",
+      "type": "python",
+      "request": "launch",
+      "program": "nerfstudio/scripts/train.py",
+      "console": "integratedTerminal",
+      "args": [
+        "splatfacto",
+        "--data",
+        "/smbshare/lingx/temp/data/rathaus",
+        // "--load-dir",
+        // "/home/lingx/repo/nerfstudio/outputs/brandenburg_gate/vanilla-nerf/2024-10-24_163236/nerfstudio_models",
+        "--pipeline.model.use-scale-regularization", "True",
+        "--pipeline.model.use-bilateral-grid", "True",
+        "colmap"
+      ],
+      "env": {"-Xfrozen_modules" : "off"}
+    },
+    {
+      "name": "Python: render",
+      "type": "python",
+      "request": "launch",
+      "program": "nerfstudio/scripts/render.py",
+      "console": "integratedTerminal",
+      "args": [
+        // "dataset",
+        "ortho",
+        "--load-config",
+        "outputs/rathaus/splatfacto/2024-11-03_101518/config.yml",
+        "--output-path",
+        "outputs/rathaus/splatfacto/2024-11-03_101518/render",
+        "--image-format", "png"
+      ],
+    },
+    {
       "name": "Python: train",
       "type": "python",
       "request": "launch",
       "program": "nerfstudio/scripts/train.py",
       "console": "integratedTerminal",
       "args": [
-        "instant_ngp",
-        "--viewer.no-enable",
-        "--logging.event-writer=wandb"
-      ]
+        "vanilla-nerf",
+        "--data",
+        "/home/lingx/repo/data/brandenburg_gate",
+        "--load-dir",
+        "/home/lingx/repo/nerfstudio/outputs/brandenburg_gate/vanilla-nerf/2024-10-24_163236/nerfstudio_models",
+        "colmap"
+//        "--pipeline.datamanager.dataparser.colmap-path=sparse/0"
+      ],
+      "env": {"-Xfrozen_modules" : "off"}
     },
     {
       "name": "Python: train ngp",

@@ -77,7 +77,7 @@ class ColmapConverterToNerfstudioDataset(BaseConverterToNerfstudioDataset):
     """If True, skips COLMAP and generates transforms.json if possible."""
     skip_image_processing: bool = False
     """If True, skips copying and downscaling of images and only runs COLMAP if possible and enabled"""
-    colmap_model_path: Path = Path("colmap/sparse/0")
+    colmap_model_path: Path = Path("sparse/0")
     """Optionally sets the path of the colmap model. Used only when --skip-colmap is set to True. The path is relative
        to the output directory.
     """
@@ -107,7 +107,7 @@ class ColmapConverterToNerfstudioDataset(BaseConverterToNerfstudioDataset):
 
     @staticmethod
     def default_colmap_path() -> Path:
-        return Path("colmap/sparse/0")
+        return Path("sparse/0")
 
     @property
     def absolute_colmap_model_path(self) -> Path:

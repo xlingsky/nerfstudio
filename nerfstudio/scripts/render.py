@@ -900,6 +900,229 @@ class DatasetRender(BaseRender):
             table.add_row(f"Outputs {split}", str(self.output_path / split))
         CONSOLE.print(Panel(table, title="[bold][green]:tada: Render on split {} Complete :tada:[/bold]", expand=False))
 
+@dataclass
+class OrthoRender(BaseRender):
+    """Render an orthophoto"""
+
+    output_path: Path = Path("renders")
+    """Path to output video file."""
+    data: Optional[Path] = None
+    """Override path to the dataset."""
+
+    def main(self):
+        import open3d as o3d
+        from open3d.camera import PinholeCameraIntrinsic
+        import open3d.visualization.rendering as rendering
+        import copy
+        import numpy as np
+        from nerfstudio.cameras import camera_utils
+        from nerfstudio.cameras.cameras import CameraType
+        from plyfile import PlyData
+        config: TrainerConfig
+
+        def convert_to_pinhole(camera):
+            intrinsic = PinholeCameraIntrinsic(
+                int(camera.width), int(camera.height),
+                int(camera.fx), int(camera.fy), 
+                int(camera.cx), int(camera.cy)
+                )
+            extrinsic = camera.camera_to_worlds.to('cpu').numpy()
+            extrinsic = np.vstack([extrinsic, np.array([[0,0,0,1]])])
+            extrinsic = np.linalg.inv(extrinsic)
+            return intrinsic, extrinsic
+
+        def update_config(config: TrainerConfig) -> TrainerConfig:
+            data_manager_config = config.pipeline.datamanager
+            assert isinstance(data_manager_config, (VanillaDataManagerConfig, FullImageDatamanagerConfig))
+            data_manager_config.eval_num_images_to_sample_from = -1
+            data_manager_config.eval_num_times_to_repeat_images = -1
+            if isinstance(data_manager_config, VanillaDataManagerConfig):
+                data_manager_config.train_num_images_to_sample_from = -1
+                data_manager_config.train_num_times_to_repeat_images = -1
+            if self.data is not None:
+                data_manager_config.data = self.data
+            return config
+
+        config, pipeline, _, _ = eval_setup(
+            self.load_config,
+            eval_num_rays_per_chunk=self.eval_num_rays_per_chunk,
+            test_mode="inference",
+            update_config_callback=update_config,
+        )
+        data_manager_config = config.pipeline.datamanager
+        assert isinstance(data_manager_config, (VanillaDataManagerConfig, FullImageDatamanagerConfig))
+
+        ply_path = data_manager_config.dataparser.data / data_manager_config.dataparser.colmap_path
+        ply_path /= 'points3D.ply'
+        if ply_path.exists():
+            ply_data = PlyData.read(ply_path)
+            point3D_xyz = torch.from_numpy(np.array([[v['x'],v['y'],v['z']] for v in ply_data['vertex']]))
+            point3D_xyz = (
+                torch.cat(
+                    (
+                        point3D_xyz,
+                        torch.ones_like(point3D_xyz[..., :1]),
+                    ),
+                    -1,
+                )
+                @ pipeline.datamanager.train_dataparser_outputs.dataparser_transform.T
+            )
+            point3D_xyz *= pipeline.datamanager.train_dataparser_outputs.dataparser_scale
+        else:
+            point3D_xyz = pipeline.datamanager.train_dataparser_outputs.metadata['points3D_xyz']
+
+        point3D_xyz = point3D_xyz.cpu().numpy()
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(point3D_xyz)
+
+        cameras = pipeline.datamanager.train_dataparser_outputs.cameras
+        imagenames = pipeline.datamanager.train_dataparser_outputs.image_filenames
+        renderer = rendering.OffscreenRenderer(int(cameras[0].width), int(cameras[0].height))
+        renderer.scene.set_background(np.array([1,1,1,1]))
+        renderer.scene.add_geometry("pointcloud", pcd, rendering.MaterialRecord())
+
+        for name, camera in zip(imagenames, cameras):
+            image_name = os.path.basename(name)
+            output_path = self.output_path/image_name
+            output_path.parent.mkdir(exist_ok=True, parents=True)
+
+            intrinsic, extrinsic = convert_to_pinhole(camera)
+            renderer.setup_camera(intrinsic, extrinsic)
+
+            image = renderer.render_to_image()
+            o3d.io.write_image(output_path, image)
+
+        obb = pcd.get_oriented_bounding_box()
+        r33 = np.asarray(obb.R).T
+        c31 = np.asarray(obb.center).reshape(3,1)
+        h44 = np.concatenate([r33, -r33@c31], 1)
+        h44 = np.concatenate([h44, np.array([[0,0,0,1]])], 0)
+
+        obb_pts = np.asarray(obb.get_box_points())
+        obb_pts = np.concatenate([obb_pts, np.ones((obb_pts.shape[0], 1))], 1).T
+        obb_pts_tf = h44@obb_pts
+        bbox_min,bbox_max  = list(np.min(obb_pts_tf, axis=1)), list(np.max(obb_pts_tf, axis=1))
+        bbox_max.append(bbox_max[0])
+        bbox_min.append(bbox_min[0])
+        bbox_max = np.array(bbox_max)
+        bbox_min = np.array(bbox_min)
+        bbox_mean = (bbox_min+bbox_max)/2
+
+        centers = []
+        r33 = []
+        bbox = []
+
+        x = np.array([[bbox_min[0], bbox_min[1], bbox_mean[2], 1], [bbox_max[0], bbox_max[1], bbox_mean[2], 1]])
+        centers.append(np.array([bbox_mean[0], bbox_mean[1], bbox_min[2]]))
+        r33.append(np.array([[1,0,0], [0,1,0], [0,0,1]]))
+        centers.append(np.array([bbox_mean[0], bbox_mean[1], bbox_max[2]]))
+        r33.append(np.array([[1,0,0], [0,1,0], [0,0,-1]]))
+        bbox.append(x)
+        bbox.append(x)
+
+        x = np.array([[bbox_mean[0], bbox_min[1], bbox_min[2], 1], [bbox_mean[0], bbox_max[1], bbox_max[2], 1]])
+        centers.append(np.array([bbox_min[0], bbox_mean[1], bbox_mean[2]]))
+        r33.append(np.array([[0,1,0], [0,0,1], [1,0,0]]))
+        centers.append(np.array([bbox_max[0], bbox_mean[1], bbox_mean[2]]))
+        r33.append(np.array([[0,1,0], [0,0,1], [-1,0,0]]))
+        bbox.append(x)
+        bbox.append(x)
+
+        x = np.array([[bbox_min[0], bbox_mean[1], bbox_min[2], 1], [bbox_max[0], bbox_mean[1], bbox_max[2], 1]])
+        centers.append(np.array([bbox_mean[0], bbox_min[1], bbox_mean[2]]))
+        r33.append(np.array([[0,0,1], [1,0,0], [0,1,0]]))
+        centers.append(np.array([bbox_mean[0], bbox_max[1], bbox_mean[2]]))
+        r33.append(np.array([[0,0,1], [1,0,0], [0,-1,0]]))
+        bbox.append(x)
+        bbox.append(x)
+
+        centers = np.array(centers)
+        r33 = np.array(r33)
+
+        camera = pipeline.datamanager.train_dataparser_outputs.cameras[1]
+        k33 = np.array([[float(camera.fx), 0, 0], [0, float(camera.fy), 0], [0, 0, 1]])
+
+        fx = []
+        fy = []
+        cx = []
+        cy = []
+        height = []
+        width = []
+        distort = []
+        ctype = []
+        poses = []
+        names = ["z+", "z-", "x+", "x-", "y+", "y-"]
+
+        for (c, r, b) in zip(centers, r33, bbox):
+            kr = k33@r
+            p34 = np.concatenate([kr, -kr@c.reshape(3,1)], 1)
+            x = p34@b.T
+            x /= x[2]
+
+            fx.append(camera.fx)
+            fy.append(camera.fy)
+            cx.append(np.max(x[0]))
+            cy.append(np.max(x[1]))
+            height.append(int(2*np.max(x[1])))
+            width.append(int(2*np.max(x[0])))
+            distort.append(
+                camera_utils.get_distortion_params(0,0,0,0,0,0)
+            )
+            ctype.append(CameraType.ORTHOPHOTO)
+            r1 = h44[:3,:3].T
+            r2 = r.T
+            c1 = c31
+            c2 = c.reshape(3,1)
+            c2w = np.concatenate([r1@r2, c1+r1@c2], 1)
+            
+            c2w[0:3, 1:3] *= -1
+            if True:
+                # world coordinate transform: map colmap gravity guess (-y) to nerfstudio convention (+z)
+                c2w = c2w[np.array([0, 2, 1]), :]
+                c2w[2, :] *= -1
+
+            poses.append(c2w)
+
+        cameras = Cameras(
+            fx=torch.tensor(fx, dtype=torch.float32),
+            fy=torch.tensor(fy, dtype=torch.float32),
+            cx=torch.tensor(cx, dtype=torch.float32),
+            cy=torch.tensor(cy, dtype=torch.float32),
+            distortion_params=torch.stack(distort, dim=0),
+            height=torch.tensor(height, dtype=torch.int32),
+            width= torch.tensor(width, dtype=torch.int32),
+            camera_to_worlds=torch.from_numpy(np.array(poses).astype(np.float32)),
+            camera_type=CameraType.ORTHOPHOTO,
+        )
+
+        for i in range(6):
+            camera = cameras[i:i+1]
+
+            image_name = f"{names[i]}.png"
+            output_path = self.output_path/image_name
+            output_path.parent.mkdir(exist_ok=True, parents=True)
+
+            renderer = rendering.OffscreenRenderer(int(camera.width), int(camera.height))
+            renderer.scene.set_background(np.array([1,1,1,1]))
+            renderer.scene.add_geometry("pointcloud", pcd, rendering.MaterialRecord())
+
+
+            intrinsic, extrinsic = convert_to_pinhole(camera)
+            renderer.setup_camera(intrinsic, extrinsic)
+
+            image = renderer.render_to_image()
+            o3d.io.write_image(output_path, image)
+
+        # for i in range(6):
+        #     camera = cameras[i:i+1]
+        #     with torch.no_grad():
+        #         outputs = pipeline.model.get_outputs_for_camera(camera)
+
+        #     image_name = f"{names[i]}.png"
+        #     output_path = self.output_path/image_name
+        #     output_path.parent.mkdir(exist_ok=True, parents=True)
+        #     media.write_image(output_path.with_suffix(".png"), outputs['rgb'].cpu().numpy(), fmt="png")
 
 Commands = tyro.conf.FlagConversionOff[
     Union[
@@ -907,6 +1130,7 @@ Commands = tyro.conf.FlagConversionOff[
         Annotated[RenderInterpolated, tyro.conf.subcommand(name="interpolate")],
         Annotated[SpiralRender, tyro.conf.subcommand(name="spiral")],
         Annotated[DatasetRender, tyro.conf.subcommand(name="dataset")],
+        Annotated[OrthoRender, tyro.conf.subcommand(name="ortho")],
     ]
 ]
 
