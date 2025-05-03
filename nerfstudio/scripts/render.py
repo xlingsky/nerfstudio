@@ -928,6 +928,7 @@ class OrthoRender(BaseRender):
                 )
             extrinsic = camera.camera_to_worlds.to('cpu').numpy()
             extrinsic = np.vstack([extrinsic, np.array([[0,0,0,1]])])
+            extrinsic[0:3, 1:3] *= -1
             extrinsic = np.linalg.inv(extrinsic)
             return intrinsic, extrinsic
 
@@ -978,20 +979,20 @@ class OrthoRender(BaseRender):
 
         cameras = pipeline.datamanager.train_dataparser_outputs.cameras
         imagenames = pipeline.datamanager.train_dataparser_outputs.image_filenames
-        renderer = rendering.OffscreenRenderer(int(cameras[0].width), int(cameras[0].height))
-        renderer.scene.set_background(np.array([1,1,1,1]))
-        renderer.scene.add_geometry("pointcloud", pcd, rendering.MaterialRecord())
+        # renderer = rendering.OffscreenRenderer(int(cameras[0].width), int(cameras[0].height))
+        # renderer.scene.set_background(np.array([1,1,1,1]))
+        # renderer.scene.add_geometry("pointcloud", pcd, rendering.MaterialRecord())
 
-        for name, camera in zip(imagenames, cameras):
-            image_name = os.path.basename(name)
-            output_path = self.output_path/image_name
-            output_path.parent.mkdir(exist_ok=True, parents=True)
+        # for name, camera in zip(imagenames, cameras):
+        #     image_name = os.path.basename(name)
+        #     output_path = self.output_path/image_name
+        #     output_path.parent.mkdir(exist_ok=True, parents=True)
 
-            intrinsic, extrinsic = convert_to_pinhole(camera)
-            renderer.setup_camera(intrinsic, extrinsic)
+        #     intrinsic, extrinsic = convert_to_pinhole(camera)
+        #     renderer.setup_camera(intrinsic, extrinsic)
 
-            image = renderer.render_to_image()
-            o3d.io.write_image(output_path, image)
+        #     image = renderer.render_to_image()
+        #     o3d.io.write_image(output_path, image)
 
         obb = pcd.get_oriented_bounding_box()
         r33 = np.asarray(obb.R).T
@@ -1077,11 +1078,6 @@ class OrthoRender(BaseRender):
             c2w = np.concatenate([r1@r2, c1+r1@c2], 1)
             
             c2w[0:3, 1:3] *= -1
-            if True:
-                # world coordinate transform: map colmap gravity guess (-y) to nerfstudio convention (+z)
-                c2w = c2w[np.array([0, 2, 1]), :]
-                c2w[2, :] *= -1
-
             poses.append(c2w)
 
         cameras = Cameras(
@@ -1096,33 +1092,32 @@ class OrthoRender(BaseRender):
             camera_type=CameraType.ORTHOPHOTO,
         )
 
-        for i in range(6):
-            camera = cameras[i:i+1]
-
-            image_name = f"{names[i]}.png"
-            output_path = self.output_path/image_name
-            output_path.parent.mkdir(exist_ok=True, parents=True)
-
-            renderer = rendering.OffscreenRenderer(int(camera.width), int(camera.height))
-            renderer.scene.set_background(np.array([1,1,1,1]))
-            renderer.scene.add_geometry("pointcloud", pcd, rendering.MaterialRecord())
-
-
-            intrinsic, extrinsic = convert_to_pinhole(camera)
-            renderer.setup_camera(intrinsic, extrinsic)
-
-            image = renderer.render_to_image()
-            o3d.io.write_image(output_path, image)
+        # renderer = rendering.OffscreenRenderer(int(max(width)), int(max(height)))
+        # renderer.scene.set_background(np.array([1,1,1,1]))
+        # renderer.scene.add_geometry("pointcloud", pcd, rendering.MaterialRecord())
 
         # for i in range(6):
-        #     camera = cameras[i:i+1]
-        #     with torch.no_grad():
-        #         outputs = pipeline.model.get_outputs_for_camera(camera)
+        #     camera = cameras[i]
 
         #     image_name = f"{names[i]}.png"
         #     output_path = self.output_path/image_name
         #     output_path.parent.mkdir(exist_ok=True, parents=True)
-        #     media.write_image(output_path.with_suffix(".png"), outputs['rgb'].cpu().numpy(), fmt="png")
+
+        #     intrinsic, extrinsic = convert_to_pinhole(camera)
+        #     renderer.setup_camera(intrinsic, extrinsic)
+
+        #     image = renderer.render_to_image()
+        #     o3d.io.write_image(output_path, image)
+
+        for i in range(6):
+            camera = cameras[i:i+1]
+            with torch.no_grad():
+                outputs = pipeline.model.get_outputs_for_camera(camera)
+
+            image_name = f"{names[i]}.png"
+            output_path = self.output_path/image_name
+            output_path.parent.mkdir(exist_ok=True, parents=True)
+            media.write_image(output_path.with_suffix(".png"), outputs['rgb'].cpu().numpy(), fmt="png")
 
 Commands = tyro.conf.FlagConversionOff[
     Union[
