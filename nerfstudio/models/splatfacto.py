@@ -552,6 +552,12 @@ class SplatfactoModel(Model):
             colors_crop = torch.sigmoid(colors_crop).squeeze(1)  # [N, 1, 3] -> [N, 3]
             sh_degree_to_use = None
 
+        from nerfstudio.cameras.cameras import CameraType
+        camera_model_name = {
+            CameraType.ORTHOPHOTO.value: "ortho",
+            CameraType.PERSPECTIVE.value: "pinhole",
+            CameraType.FISHEYE.value: "fisheye"}
+
         render, alpha, self.info = rasterization(
             means=means_crop,
             quats=quats_crop,  # rasterization does normalization internally
@@ -570,6 +576,7 @@ class SplatfactoModel(Model):
             sparse_grad=False,
             absgrad=self.strategy.absgrad if isinstance(self.strategy, DefaultStrategy) else False,
             rasterize_mode=self.config.rasterize_mode,
+            camera_model= camera_model_name[int(camera.camera_type)],
             # set some threshold to disregrad small gaussians for faster rendering.
             # radius_clip=3.0,
         )

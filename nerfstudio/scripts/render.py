@@ -953,7 +953,7 @@ class OrthoRender(BaseRender):
         data_manager_config = config.pipeline.datamanager
         assert isinstance(data_manager_config, (VanillaDataManagerConfig, FullImageDatamanagerConfig))
 
-        ply_path = data_manager_config.dataparser.data / data_manager_config.dataparser.colmap_path
+        ply_path = data_manager_config.dataparser.data / "sparse/0/"
         ply_path /= 'points3D.ply'
         if ply_path.exists():
             ply_data = PlyData.read(ply_path)
