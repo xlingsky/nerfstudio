@@ -34,18 +34,37 @@
       "console": "integratedTerminal",
       "args": [
         "splatfacto",
-        "--data",
-        "/smbshare/lingx/temp/data/rathaus",
-        // "--load-dir",
-        // "/home/lingx/repo/nerfstudio/outputs/brandenburg_gate/vanilla-nerf/2024-10-24_163236/nerfstudio_models",
         "--pipeline.model.use-scale-regularization", "True",
         "--pipeline.model.use-bilateral-grid", "True",
-        "colmap"
+        "--data",
+        "/mnt/public/temp/data/small_city/pose/block_a",
+        "--load-dir",
+        "/home/lingx/repo/xnerfstudio/outputs/block_a/splatfacto/2025-05-04_190941/nerfstudio_models",
+        "--max-num-iterations", "50000",
+        // "/smbshare/lingx/temp/data/rathaus",
+        // "--load-dir",
+        // "/home/lingx/repo/nerfstudio/outputs/brandenburg_gate/vanilla-nerf/2024-10-24_163236/nerfstudio_models",
+        // "colmap"
       ],
       "env": {"-Xfrozen_modules" : "off"}
     },
     {
-      "name": "Python: render",
+      "name": "render: matrixcity",
+      "type": "python",
+      "request": "launch",
+      "program": "nerfstudio/scripts/render.py",
+      "console": "integratedTerminal",
+      "args": [
+        "ortho",
+        "--load-config",
+        "outputs/block_a/splatfacto/2025-05-04_225240/config.yml",
+        "--output-path",
+        "outputs/block_a/splatfacto/2025-05-04_225240/render",
+        "--image-format", "png"
+      ],
+    },
+    {
+      "name": "render: rathaus",
       "type": "python",
       "request": "launch",
       "program": "nerfstudio/scripts/render.py",

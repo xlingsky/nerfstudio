@@ -953,7 +953,7 @@ class OrthoRender(BaseRender):
         data_manager_config = config.pipeline.datamanager
         assert isinstance(data_manager_config, (VanillaDataManagerConfig, FullImageDatamanagerConfig))
 
-        ply_path = data_manager_config.dataparser.data / "sparse/0/"
+        ply_path = data_manager_config.dataparser.data #/ "sparse/0"
         ply_path /= 'points3D.ply'
         if ply_path.exists():
             ply_data = PlyData.read(ply_path)
@@ -1061,12 +1061,25 @@ class OrthoRender(BaseRender):
             x = p34@b.T
             x /= x[2]
 
-            fx.append(camera.fx)
-            fy.append(camera.fy)
-            cx.append(np.max(x[0]))
-            cy.append(np.max(x[1]))
-            height.append(int(2*np.max(x[1])))
-            width.append(int(2*np.max(x[0])))
+            hx = max(x[0])
+            hy = max(x[1])
+
+            l = max(hx, hy)
+            if l > 3200:
+                hx = hx / l * 3200
+                hy = hy / l * 3200
+                # fx.append(camera.fx/l*1600)
+                # fy.append(camera.fy/l*1600)
+                fx.append(camera.fx)
+                fy.append(camera.fy)
+            else:
+                fx.append(camera.fx)
+                fy.append(camera.fy)
+
+            cx.append(hx)
+            cy.append(hy)
+            height.append(int(2*hx))
+            width.append(int(2*hy))
             distort.append(
                 camera_utils.get_distortion_params(0,0,0,0,0,0)
             )
